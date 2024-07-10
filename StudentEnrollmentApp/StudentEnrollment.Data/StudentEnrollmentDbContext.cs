@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace StudentEnrollment.Data
 {
-    public class StudentEnrollmentDbContext : IdentityDbContext
+    public class StudentEnrollmentDbContext : IdentityDbContext<SchoolUser>
     {
         public StudentEnrollmentDbContext(DbContextOptions<StudentEnrollmentDbContext> options) : base(options)
         {
@@ -24,6 +24,8 @@ namespace StudentEnrollment.Data
         {
             base.OnModelCreating(builder);
             builder.ApplyConfiguration(new CourseConfiguration());
+            builder.ApplyConfiguration(new RoleConfiguration());
+            builder.ApplyConfiguration(new SchoolUserConfiguration());
             builder.ApplyConfiguration(new UserRoleConfiguration());
         }
 

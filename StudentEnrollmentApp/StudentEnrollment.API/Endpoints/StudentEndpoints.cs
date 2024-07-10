@@ -1,5 +1,9 @@
 ﻿using AutoMapper;
+using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using StudentEnrollment.API.DTOs.Student;
+using StudentEnrollment.API.Filters;
+using StudentEnrollment.API.Services;
 using StudentEnrollment.Data.Contracts;
 using StudentEnrollment.Data.Entities;
 
@@ -15,6 +19,7 @@ namespace StudentEnrollment.API.Endpoints
                 var data = mapper.Map<List<StudentDto>>(students);
                 return data;
             })
+            .AllowAnonymous()
             .WithTags(nameof(Student))
             .WithName("GetAllStudents")
             .Produces<List<StudentDto>>(StatusCodes.Status200OK);
@@ -26,6 +31,7 @@ namespace StudentEnrollment.API.Endpoints
                         ? Results.Ok(mapper.Map<StudentDto>(model))
                         : Results.NotFound();
             })
+            .AllowAnonymous()
             .WithTags(nameof(Student))
             .WithName("GetStudentById")
             .Produces<StudentDto>(StatusCodes.Status200OK)
@@ -43,8 +49,15 @@ namespace StudentEnrollment.API.Endpoints
             .Produces<StudentDetailsDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
-            routes.MapPut("/api/Student/{id}", async (int Id, StudentDto studentDto, IStudentRepository repo, IMapper mapper) =>
+            routes.MapPut("/api/Student/{id}", [Authorize(Roles = "Administrator")] async (int Id, StudentDto studentDto, IStudentRepository repo, IMapper mapper, IValidator<StudentDto> validator, IFileUpload fileUpload) =>
             {
+                var validationResult = await validator.ValidateAsync(studentDto);
+
+                if (!validationResult.IsValid)
+                {
+                    return Results.BadRequest(validationResult.ToDictionary());
+                }
+
                 var foundModel = await repo.GetAsync(Id);
 
                 if (foundModel is null)
@@ -53,6 +66,12 @@ namespace StudentEnrollment.API.Endpoints
                 }
                 //update model properties here
                 mapper.Map(studentDto, foundModel);
+
+                if (studentDto.ProfilePicture != null)
+                {
+                    foundModel.Picture = fileUpload.UploadStudentFile(studentDto.ProfilePicture, studentDto.OriginalFileName);
+                }
+
                 await repo.UpdateAsync(foundModel);
                 return Results.NoContent();
             })
@@ -61,17 +80,29 @@ namespace StudentEnrollment.API.Endpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status204NoContent);
 
-            routes.MapPost("/api/Student/", async (CreateStudentDto studentDto, IStudentRepository repo, IMapper mapper) =>
+            routes.MapPost("/api/Student/", [Authorize(Roles = "Administrator")] async (CreateStudentDto studentDto, IStudentRepository repo, IMapper mapper, IValidator<CreateStudentDto> validator, IFileUpload fileUpload) =>
             {
+                var validationResult = await validator.ValidateAsync(studentDto);
+
+                if (!validationResult.IsValid)
+                {
+                    return Results.BadRequest(validationResult.ToDictionary());
+                }
+
                 var student = mapper.Map<Student>(studentDto);
+
+                student.Picture = fileUpload.UploadStudentFile(studentDto.ProfilePicture, studentDto.OriginalFileName);
+
                 await repo.AddAsync(student);
                 return Results.Created($"/Students/{student.Id}", student);
             })
+            .AddEndpointFilter<ValidatationFilter<CreateStudentDto>>()
+            .AddEndpointFilter<LoggingFilter>()
             .WithTags(nameof(Student))
             .WithName("CreateStudent")
             .Produces<Student>(StatusCodes.Status201Created);
 
-            routes.MapDelete("/api/Student/{id}", async (int Id, IStudentRepository repo, IMapper mapper) =>
+            routes.MapDelete("/api/Student/{id}", [Authorize(Roles = "Administrator")] async (int Id, IStudentRepository repo, IMapper mapper) =>
             {
                 return await repo.DeleteAsync(Id) ? Results.NoContent() : Results.NotFound();
             })
